@@ -1,0 +1,15 @@
+[Unit]
+Description=Telegram Business AI Bot
+After=network.target
+
+[Service]
+Type=simple
+User=mik
+WorkingDirectory=/home/mik/telegram-business-ai-bot
+Environment="PATH=/home/mik/telegram-business-ai-bot/venv/bin"
+ExecStart=/home/mik/telegram-business-ai-bot/venv/bin/python main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
