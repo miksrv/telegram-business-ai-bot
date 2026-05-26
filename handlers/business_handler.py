@@ -99,9 +99,15 @@ def register_business_handlers(bot: telebot.TeleBot) -> None:
         )
 
         auto_replied = False
+        ai_failed = False
         if should_auto_reply:
             history = get_conversation_history(conn_id, chat_id)
-            reply = generate_reply(text, history, settings.get("business_context"))
+            try:
+                reply = generate_reply(text, history, settings.get("business_context"))
+            except Exception as e:
+                logging.error("generate_reply raised unexpectedly for chat %d: %s", chat_id, e)
+                reply = None
+
             if reply:
                 try:
                     bot.send_message(chat_id, reply, business_connection_id=conn_id)
@@ -111,6 +117,8 @@ def register_business_handlers(bot: telebot.TeleBot) -> None:
                     logging.info("Auto-replied to chat %d via connection %s", chat_id, conn_id)
                 except Exception as e:
                     logging.error("Failed to send auto-reply to %d: %s", chat_id, e)
+            else:
+                ai_failed = True
 
         classification = classify_message(text) if text else "other"
         templates = list_templates(owner_id)
@@ -120,6 +128,7 @@ def register_business_handlers(bot: telebot.TeleBot) -> None:
             text or "[нетекстовое сообщение]",
             classification,
             auto_replied,
+            ai_failed=ai_failed,
         )
         keyboard = build_notification_keyboard(chat_id, conn_id, auto_replied, bool(templates))
 

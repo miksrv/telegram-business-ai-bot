@@ -43,8 +43,19 @@ def _call_groq(model: str, messages: list, max_tokens: int, temperature: float) 
             logging.warning("Groq retry %d/3: %s", attempt + 1, e)
             if attempt < 2:
                 time.sleep(2**attempt)
+        except requests.HTTPError as e:
+            code = e.response.status_code if e.response is not None else "?"
+            if code == 429:
+                logging.warning("Groq rate limit hit (429) — no reply sent to customer")
+            elif code == 402:
+                logging.error("Groq credits exhausted (402) — no reply sent to customer")
+            elif code in (401, 403):
+                logging.error("Groq auth error (%s) — check GROQ_API_KEY", code)
+            else:
+                logging.error("Groq HTTP %s: %s", code, e)
+            return None
         except Exception as e:
-            logging.error("Groq API error: %s", e)
+            logging.error("Groq unexpected error: %s", e)
             return None
     return None
 

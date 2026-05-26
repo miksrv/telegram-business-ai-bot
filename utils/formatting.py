@@ -28,7 +28,13 @@ def format_user_name(from_user) -> str:
     return name.strip() or "Неизвестный"
 
 
-def format_notification(from_user, text: str, classification: str, auto_replied: bool) -> str:
+def format_notification(
+    from_user,
+    text: str,
+    classification: str,
+    auto_replied: bool,
+    ai_failed: bool = False,
+) -> str:
     emoji = CLASSIFICATION_EMOJI.get(classification, "📨")
     label = CLASSIFICATION_LABEL.get(classification, "Сообщение")
 
@@ -36,7 +42,13 @@ def format_notification(from_user, text: str, classification: str, auto_replied:
     username_str = f" @{html.escape(from_user.username)}" if from_user.username else ""
 
     preview = html.escape(text[:300]) + ("..." if len(text) > 300 else "")
-    status = "✅ Авто-ответ отправлен" if auto_replied else "⏳ Ожидает ответа"
+
+    if ai_failed:
+        status = "⚠️ AI недоступен — ответьте вручную"
+    elif auto_replied:
+        status = "✅ Авто-ответ отправлен"
+    else:
+        status = "⏳ Ожидает ответа"
 
     return (
         f"{emoji} <b>{name}{username_str}</b>\n"
