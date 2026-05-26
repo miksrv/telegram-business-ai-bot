@@ -75,6 +75,14 @@ def get_conversation_history(
     return list(reversed(rows))
 
 
+def get_message_count(connection_id: str, chat_id: int) -> int:
+    row = get_db().execute(
+        "SELECT message_count FROM conversations WHERE connection_id = ? AND chat_id = ?",
+        (connection_id, chat_id),
+    ).fetchone()
+    return row["message_count"] if row else 0
+
+
 def get_today_stats(connection_id: str) -> dict:
     db = get_db()
     today = datetime.utcnow().strftime("%Y-%m-%d")

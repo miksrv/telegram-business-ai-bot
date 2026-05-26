@@ -6,7 +6,11 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from config.settings import GROQ_API_KEY, MAX_INPUT_CHARS, MAX_REPLY_TOKENS, MODEL_FAST, MODEL_TEXT
-from core.prompts import get_business_reply_prompt, get_classification_prompt
+from core.prompts import (
+    get_business_reply_prompt,
+    get_classification_prompt,
+    get_style_analysis_prompt,
+)
 
 _GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 _HEADERS = {
@@ -25,6 +29,8 @@ _session.mount(
 _VALID_CLASSIFICATIONS = frozenset(
     {"inquiry", "order", "complaint", "spam", "greeting", "other"}
 )
+
+_MIN_OWNER_REPLIES_FOR_STYLE = 2
 
 
 def _call_groq(model: str, messages: list, max_tokens: int, temperature: float) -> str | None:
@@ -64,22 +70,46 @@ def generate_reply(
     text: str,
     history: list,
     business_context: str | None,
+    contact_style: str | None = None,
 ) -> str | None:
     text = text[:MAX_INPUT_CHARS]
-    system = get_business_reply_prompt(business_context)
+    system = get_business_reply_prompt(business_context, contact_style)
 
     messages = [{"role": "system", "content": system}]
 
     for row in history[-15:]:
-        # Both owner manual replies and bot auto-replies map to "assistant" role
         groq_role = "assistant" if row["role"] in ("assistant", "owner") else "user"
         messages.append({"role": groq_role, "content": row["text"]})
 
-    # Ensure the latest message is the current customer text
     if not messages or messages[-1].get("role") != "user" or messages[-1].get("content") != text:
         messages.append({"role": "user", "content": text})
 
     return _call_groq(MODEL_TEXT, messages, max_tokens=MAX_REPLY_TOKENS, temperature=0.75)
+
+
+def analyze_style(history: list) -> str | None:
+    """
+    Analyzes how the owner communicates with a specific contact.
+    Requires at least _MIN_OWNER_REPLIES_FOR_STYLE owner/assistant messages.
+    Returns a style summary string or None.
+    """
+    owner_turns = [r for r in history if r["role"] in ("owner", "assistant")]
+    if len(owner_turns) < _MIN_OWNER_REPLIES_FOR_STYLE:
+        return None
+
+    lines = []
+    for row in history:
+        prefix = "[Owner]" if row["role"] in ("owner", "assistant") else "[Customer]"
+        lines.append(f"{prefix}: {row['text']}")
+
+    prompt = get_style_analysis_prompt("\n".join(lines))
+    result = _call_groq(
+        MODEL_FAST,
+        [{"role": "user", "content": prompt}],
+        max_tokens=150,
+        temperature=0.3,
+    )
+    return result or None
 
 
 def classify_message(text: str) -> str:

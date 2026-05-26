@@ -3,14 +3,16 @@ import logging
 import telebot
 
 from config.settings import OWNER_ID
-from core.brain import classify_message, generate_reply
+from core.brain import analyze_style, classify_message, generate_reply
 from database.conversations_repo import (
     get_conversation_history,
+    get_message_count,
     mark_not_pending,
     save_message,
     upsert_conversation,
 )
 from database.settings_repo import get_connection, get_settings, upsert_connection
+from database.style_repo import get_contact_style, save_contact_style
 from database.templates_repo import list_templates
 from utils.formatting import (
     build_notification_keyboard,
@@ -18,6 +20,47 @@ from utils.formatting import (
     format_user_name,
 )
 from utils.hours import is_within_business_hours
+
+# Minimum total messages in a conversation before style analysis is attempted
+_MIN_MSGS_FOR_STYLE = 5
+# Re-analyze style every N new messages to evolve with the relationship
+_STYLE_REANALYSIS_INTERVAL = 20
+
+
+def _get_or_refresh_style(conn_id: str, chat_id: int) -> str | None:
+    """
+    Returns cached style for this contact, refreshing it when needed.
+    Analysis is skipped silently if there aren't enough messages yet.
+    """
+    style_row = get_contact_style(chat_id)
+    current_count = get_message_count(conn_id, chat_id)
+
+    analyzed_count = style_row["msg_count"] if style_row else 0
+    needs_analysis = (
+        style_row is None and current_count >= _MIN_MSGS_FOR_STYLE
+    ) or (
+        style_row is not None
+        and current_count - analyzed_count >= _STYLE_REANALYSIS_INTERVAL
+    )
+
+    if not needs_analysis:
+        return style_row["style_summary"] if style_row else None
+
+    # Fetch a broader history window for analysis (not capped at 15)
+    history = get_conversation_history(conn_id, chat_id, limit=30)
+    new_style = analyze_style(history)
+
+    if new_style:
+        save_contact_style(chat_id, conn_id, new_style, current_count)
+        logging.info(
+            "Contact style %s for chat %d (%d msgs)",
+            "updated" if style_row else "created",
+            chat_id,
+            current_count,
+        )
+        return new_style
+
+    return style_row["style_summary"] if style_row else None
 
 
 def register_business_handlers(bot: telebot.TeleBot) -> None:
@@ -101,9 +144,12 @@ def register_business_handlers(bot: telebot.TeleBot) -> None:
         auto_replied = False
         ai_failed = False
         if should_auto_reply:
+            contact_style = _get_or_refresh_style(conn_id, chat_id)
             history = get_conversation_history(conn_id, chat_id)
             try:
-                reply = generate_reply(text, history, settings.get("business_context"))
+                reply = generate_reply(
+                    text, history, settings.get("business_context"), contact_style
+                )
             except Exception as e:
                 logging.error("generate_reply raised unexpectedly for chat %d: %s", chat_id, e)
                 reply = None

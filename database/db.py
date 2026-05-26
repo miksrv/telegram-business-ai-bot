@@ -64,6 +64,14 @@ def init_db() -> None:
             UNIQUE(owner_id, name)
         );
 
+        CREATE TABLE IF NOT EXISTS contact_styles (
+            chat_id         INTEGER PRIMARY KEY,
+            connection_id   TEXT    NOT NULL,
+            style_summary   TEXT    NOT NULL,
+            msg_count       INTEGER DEFAULT 0,
+            analyzed_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE TABLE IF NOT EXISTS owner_settings (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
             owner_id            INTEGER UNIQUE NOT NULL,
