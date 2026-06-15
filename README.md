@@ -32,6 +32,8 @@ Telegram Business allows a bot to be connected to a personal Telegram account. O
 ## Features
 
 - **AI auto-reply** — Groq AI generates responses on your behalf using your configured business context and per-contact conversation history
+- **Grounded answers** — the AI only answers from your business context; for anything it doesn't know it defers ("I'll get back to you shortly") instead of inventing facts
+- **Per-contact style learning** — the bot analyzes how you write to each contact and mirrors that tone (language, formality, length, emoji) in auto-replies
 - **Business hours** — auto-reply activates automatically outside your working hours; during hours it only notifies you
 - **Message classification** — each incoming message is classified as inquiry / order / complaint / spam / greeting, shown in the owner notification
 - **Per-contact memory** — conversation history is stored per customer chat and included in AI context
@@ -186,16 +188,19 @@ If I don't know the answer I say I'll get back to them.
 
 ## Auto-Reply Logic
 
-Auto-reply fires when **either** condition is true:
+Auto-reply fires when the incoming message has text, the connection allows replies (`can_reply`), **and** at least one of these is true:
 
 - `/autoreply on` is set (always on), **or**
 - The current time is **outside** the configured business hours
 
 When auto-reply fires:
-1. The last 15 messages from the conversation are loaded as context
-2. Groq (`llama-3.3-70b-versatile`) generates a reply using your business context
-3. The reply is sent to the customer via the Telegram Business API
-4. The chat is marked as not pending
+1. The contact's writing style is resolved (and re-analyzed if enough new messages have accumulated)
+2. The last 15 messages from the conversation are loaded as context
+3. Groq (`llama-3.3-70b-versatile`) generates a reply using your business context and the learned style, following a strict grounding rule (defer instead of guessing unknown facts)
+4. The reply is sent to the customer via the Telegram Business API
+5. The chat is marked as not pending
+
+If the AI call fails, no reply is sent and the owner notification shows an **"AI unavailable — reply manually"** status.
 
 When auto-reply does **not** fire (within business hours with `autoreply off`), you receive a notification with an **"Auto-reply now"** button to trigger it manually.
 
@@ -234,7 +239,7 @@ When a customer message arrives, tap **📝 Template** in the notification → s
 ├── main.py                      # Entry point, polling loop
 ├── config/settings.py           # Environment variables and constants
 ├── core/
-│   ├── brain.py                 # Groq API calls (generate_reply, classify_message)
+│   ├── brain.py                 # Groq API calls (generate_reply, analyze_style, classify_message)
 │   └── prompts.py               # AI system prompts
 ├── handlers/
 │   ├── business_handler.py      # business_connection + business_message updates
@@ -244,6 +249,7 @@ When a customer message arrives, tap **📝 Template** in the notification → s
 │   ├── db.py                    # SQLite init and schema
 │   ├── conversations_repo.py    # Conversation history and message log
 │   ├── templates_repo.py        # Quick reply templates
+│   ├── style_repo.py            # Per-contact learned writing styles
 │   └── settings_repo.py         # Owner settings and connection state
 ├── services/telegram_service.py # Bot initialization, handler registration
 ├── utils/
