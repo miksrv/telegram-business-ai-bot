@@ -9,3 +9,4 @@ build/
 data/*.db
 .venv/
 venv/
+.idea
